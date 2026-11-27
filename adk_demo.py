@@ -1,21 +1,9 @@
 """Two ADK agents separated by the HandoffGuard release endpoint."""
 import argparse
 import asyncio
-import json
 import os
 import uuid
-from urllib.request import Request, urlopen
-
-BASE = os.getenv("HANDOFF_URL", "http://localhost:8502").rstrip("/")
-
-
-def desk(path, data=None):
-    headers = {"Content-Type": "application/json"}
-    if os.getenv("HANDOFF_ID_TOKEN"):
-        headers["Authorization"] = "Bearer " + os.environ["HANDOFF_ID_TOKEN"]
-    req = Request(BASE+path, data=None if data is None else json.dumps(data).encode(), headers=headers)
-    with urlopen(req, timeout=65) as response:
-        return json.load(response)
+from agent_api import intake_packet, wait_for_release
 
 
 async def agent_reply(name, instruction, prompt):
@@ -41,26 +29,15 @@ async def run(change):
     note = await agent_reply("researcher", "Write a one-sentence handoff preserving the user's API compatibility requirement.", source)
     # Deliberately simulate a modified message in the contradiction demo.
     handoff = "Remove the deprecated API alias." if change else note
-    r = await asyncio.to_thread(desk, "/api/reviews", {"reference":"ADK alias review "+uuid.uuid4().hex[:8],
-                                 "source":"Original task: "+source+"\nResearch agent: "+note, "handoff":handoff})
-    print("Open the desk to inspect", r["reference"], flush=True)
-    path = "/api/reviews/" + r["id"]
-    for _ in range(120):
-        if r["state"] == "approved":
-            released = await asyncio.to_thread(desk, path+"/release")
-            print(await agent_reply("implementer", "Write a brief implementation plan for the approved instruction.", released["handoff"]))
-            return
-        if r["state"] not in ("pending","checking"):
-            print("Implementation held:", r["state"])
-            return
-        await asyncio.sleep(2)
-        r = await asyncio.to_thread(desk, path)
-    print("Review still pending. The implementation agent did not start.")
+    reference = "ADK alias review " + uuid.uuid4().hex[:8]
+    transcript = "Original task: " + source + "\nResearch agent: " + note
+    r = await asyncio.to_thread(intake_packet, reference, transcript, handoff)
+    print("Open the desk to inspect", reference, flush=True)
+    instruction = await asyncio.to_thread(wait_for_release, r["id"])
+    print(await agent_reply("implementer", "Write a brief implementation plan for the approved instruction.", instruction))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--change", action="store_true", help="Simulate an instruction changed in transit")
     asyncio.run(run(parser.parse_args().change))
-
-

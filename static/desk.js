@@ -1,8 +1,8 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const labels = {checking:"Checking", pending:"Awaiting decision", approved:"Approved", rejected:"Rejected", clarification:"Clarification requested", blocked:"Policy block", failed:"Review failed"};
+const labels = {archived:"Archived",superseded:"Superseded",checking:"Checking", pending:"Awaiting decision", approved:"Approved", rejected:"Rejected", clarification:"Clarification requested", blocked:"Policy block", failed:"Review failed"};
 const verdicts = {aligned:"Requirements match", conflict:"Instructions conflict", missing:"A requirement is missing", unclear:"Meaning is unclear", off_task:"Decision outside the task", sensitive:"Credential detected", suspicious:"Instruction override detected", unavailable:"Review unavailable"};
-let idToken = "";
+let idToken = "", editing = null;
 let config, selected = null, rows = [], revision = 0, loading = false;
 
 async function api(path, body, headers = {}) {
@@ -26,7 +26,7 @@ function drawQueue() {
     const btn = document.createElement("button"), meta = document.createElement("small");
     btn.className = "queueitem"; btn.setAttribute("aria-current", String(selected?.id === r.id));
     btn.textContent = r.reference;
-    meta.textContent = labels[r.state] + " · " + r.id.slice(0,7); btn.append(meta);
+    meta.textContent = labels[r.state] + (r.revision ? " · v" + r.revision : ""); btn.append(meta);
     btn.onclick = () => openPacket(r.id).catch(e => notice(e.message));
     return btn;
   });
@@ -40,7 +40,7 @@ function drawQueue() {
 function show(r) {
   selected = r; $("compose").hidden = true; $("report").hidden = false;
   $("title").textContent = r.reference; $("state").textContent = labels[r.state];
-  $("stamp").textContent = r.id.slice(0,12) + " · " + new Date(r.updated*1000).toLocaleString() + (r.decision_by ? " · " + r.decision_by : "");
+  $("stamp").textContent = (r.revision ? "Revision " + r.revision : "Prior review") + " · " + new Date(r.updated*1000).toLocaleString() + (r.decision_by ? " · " + r.decision_by : "");
   const f = r.finding || {};
   $("engine").textContent = r.engine || "Review in progress"; $("verdict").textContent = verdicts[f.status] || "Checking handoff";
   $("reason").textContent = f.reason || "The result will appear here automatically.";
@@ -55,7 +55,7 @@ function show(r) {
   }));
   const bands = ["Low", "Ambiguous", "Incomplete or off task", "High", "Critical"];
   $("score").textContent = r.risk_score == null ? "Unscored" : r.risk_score + "/4 · " + bands[r.risk_score];
-  $("recommendation").textContent = r.recommended_action;
+  $("recommendation").textContent = ["superseded","archived"].includes(r.state) ? "Release unavailable" : r.recommended_action;
   const checks = f.additional_findings || [];
   $("otherFindings").hidden = !checks.length;
   $("checks").replaceChildren(...checks.map(item => {
@@ -71,7 +71,7 @@ function show(r) {
     button.classList.toggle("primary",button.dataset.action === rec);
   }
   $("run").hidden = r.state !== "approved" || ![config.source,config.examples["Corrected wording"],config.examples["Changed instruction"]].includes(r.handoff);
-  $("revise").hidden = !r.source; $("simulation").textContent = ""; drawQueue();
+  $("revise").hidden = !r.source || r.state === "superseded"; $("simulation").textContent = ""; drawQueue();
 }
 async function openPacket(id) {
   const sequence = ++revision;
@@ -81,6 +81,10 @@ async function openPacket(id) {
 function compose(r) {
   ++revision; selected = null; $("report").hidden = true; $("compose").hidden = false;
   resetFiles();
+  editing = r?.revision ? r : null;
+  $("reference").readOnly = Boolean(editing);
+  $("receiverUid").value = r?.receiver_uid || "";
+  $("options").open = false;
   $("example").value = r ? "Custom" : "Deprecated API alias";
   $("source").value = r ? r.source : config.alias_source;
   $("handoff").value = r ? r.handoff : config.examples["Deprecated API alias"];
@@ -95,7 +99,7 @@ function selectExample() {
   if (name === "Custom") return;
   const alias = name === "Deprecated API alias";
   $("source").value = alias ? config.alias_source : config.source;
-  $("reference").value = alias ? "API compatibility" : "Payment retries";
+  if (!editing) $("reference").value = alias ? "API compatibility" : "Payment retries";
   $("handoff").value = config.examples[name];
 }
 async function importConversation(field) {
@@ -121,11 +125,30 @@ async function refresh() {
   } finally { loading = false; }
 }
 function loginView(visible) {
+  $("testDesk").hidden = visible;
+  if (visible) $("testResult").hidden = true;
   $("login").hidden = !visible; $("workspace").hidden = visible; $("new").hidden = visible;
 }
 async function start() {
   config = await api("/api/config");
-  $("connection").textContent = config.live ? "Model · " + config.model : "Local checks available";
+  $("receiverLabel").hidden = !config.firebase;
+  bind("testDesk", async () => {
+    $("testDesk").disabled = true;
+    $("testResult").hidden = false; $("testSteps").replaceChildren();
+    $("testTitle").textContent = "Checking the release flow…";
+    try {
+      const result = await api("/api/self-test", {});
+      $("testTitle").textContent = result.passed ? "Release checks passed" : "Release check failed";
+      $("testSteps").replaceChildren(...result.steps.map(step => {
+        const line = document.createElement("li");
+        line.textContent = (step.passed ? "Pass · " : "Fail · ") + step.label;
+        return line;
+      }));
+    } catch (err) { $("testTitle").textContent = "Test unavailable"; notice(err.message); }
+    finally { $("testDesk").disabled = false; }
+  });
+  bind("closeTest", () => { $("testResult").hidden = true; });
+  $("connection").textContent = config.live ? config.provider + " configured · " + config.model : "Gemini setup required";
   $("policy").textContent = config.auto ? "Aligned packets release automatically" : "Reviewer approval required";
   for (const name of [...Object.keys(config.examples),"Custom"]) $("example").add(new Option(name,name));
   $("example").onchange = selectExample;
@@ -138,6 +161,8 @@ async function start() {
     event.preventDefault();
     const sequence = ++revision;
     const data = {reference:$("reference").value, source:$("source").value, handoff:$("handoff").value};
+    if (editing) data.revises = editing.id;
+    if ($("receiverUid").value.trim()) data.receiver_uid = $("receiverUid").value.trim();
     const button = $("submit"); button.disabled = true; button.textContent = "Checking…";
     try {
       const result = await api("/api/reviews", data);
@@ -176,7 +201,3 @@ async function start() {
   setInterval(() => {if (!document.hidden && (!config.firebase || idToken)) refresh().catch(e=>notice(e.message));},4000);
 }
 start().catch(e=>notice(e.message));
-
-
-
-

@@ -13,7 +13,8 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 
-from review import ALIAS_SOURCE, ALIAS_HANDOFF, RISK, gemini_configured, BAD, GOOD, DEFAULT, MISSING, Problem, decide, submit
+from release_check import run_check
+from review import needs_fresh_review, released, ALIAS_SOURCE, ALIAS_HANDOFF, RISK, gemini_configured, BAD, GOOD, DEFAULT, MISSING, Problem, decide, submit
 from storage import Store
 from cloud_services import firebase_user
 
@@ -22,6 +23,8 @@ STATIC = Path(__file__).with_name("static")
 
 def public(record):
     visible = {k: v for k, v in record.items() if k != "owner"}
+    if needs_fresh_review(record):
+        visible["state"] = "archived"
     status = (record.get("finding") or {}).get("status")
     score, action = RISK.get(status, (None, "Retry review" if status == "unavailable" else "Wait"))
     return dict(visible, risk_score=score, recommended_action=action)
@@ -54,6 +57,7 @@ async def home(request):
 async def config(request):
     return JSONResponse({"model": os.getenv("GEMINI_MODEL") or "Unconfigured",
                          "live": gemini_configured(),
+                         "provider": "Vertex AI" if os.getenv("VERTEX_PROJECT") and not os.getenv("GEMINI_API_KEY") else "Gemini API",
                          "firebase": bool(os.getenv("HANDOFF_FIREBASE_PROJECT")),
                          "firebase_web_key": os.getenv("HANDOFF_FIREBASE_WEB_KEY", ""),
                          "auto": os.getenv("HANDOFF_AUTO_RELEASE") == "1",
@@ -70,7 +74,7 @@ async def reviews(request):
         record = await run_in_threadpool(submit, data)
         return JSONResponse(public(record), status_code=503 if record["state"] == "failed" else 200)
     records = await run_in_threadpool(lambda: Store().recent())
-    return JSONResponse([{k: r[k] for k in ("id", "reference", "state", "updated")} for r in records])
+    return JSONResponse([{k: public(r).get(k) for k in ("id", "reference", "revision", "state", "updated")} for r in records])
 
 
 async def packet(request):
@@ -89,25 +93,41 @@ async def packet(request):
     if record is None:
         raise Problem(404, "Unknown packet.")
     if request.url.path.endswith("/simulate"):
-        if record["state"] != "approved":
-            raise Problem(409, "Approve the packet before running the mock ledger.")
+        released(record)
         instruction = record["handoff"]
         if instruction not in (BAD, GOOD, DEFAULT):
             raise Problem(422, "Select a payment demo to run the mock ledger.")
         keys = [str(i) if instruction == BAD else "payment-1" for i in range(2)]
         return JSONResponse({"attempts": 2, "charges": len(set(keys))})
     if request.url.path.endswith("/release"):
-        if record["state"] != "approved":
-            raise Problem(409, "Release held: " + record["state"])
-        return JSONResponse({"id": key, "handoff": record["handoff"]})
+        return JSONResponse(released(record))
     return JSONResponse(public(record))
 
+
+async def receive(request):
+    uid = getattr(request.state, "uid", None)
+    if not uid:
+        raise Problem(403, "This endpoint requires a Firebase receiver identity.")
+    key = request.path_params["key"]
+    if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
+        raise Problem(404, "Unknown assignment.")
+    record = await run_in_threadpool(lambda: Store().get(key))
+    if not record or record.get("receiver_uid") != uid:
+        raise Problem(404, "Unknown assignment.")
+    return JSONResponse(released(record))
+
+
+async def self_test(request):
+    await payload(request)
+    return JSONResponse(await run_in_threadpool(run_check))
 
 async def problem(request, exc):
     return JSONResponse({"error": str(exc)}, status_code=exc.code)
 
 
 app = Starlette(routes=[Route("/", home), Route("/api/config", config),
+                        Route("/api/self-test", self_test, methods=["POST"]),
+                        Route("/api/receiver/{key}/release", receive),
                         Route("/api/reviews", reviews, methods=["GET", "POST"]),
                         Route("/api/reviews/{key}/release", packet),
                         Route("/api/reviews/{key}/simulate", packet),
@@ -130,7 +150,9 @@ async def privacy(request, call_next):
         uid = claims["sub"]
         reviewers = os.getenv("HANDOFF_FIREBASE_REVIEWERS", "").split(",")
         members = os.getenv("HANDOFF_FIREBASE_MEMBERS", "").split(",")
-        if uid not in reviewers and (uid not in members or request.url.path.endswith("/decision")):
+        request.state.uid = uid
+        receiver_read = request.method == "GET" and request.url.path.startswith("/api/receiver/")
+        if not receiver_read and uid not in reviewers and (uid not in members or request.url.path.endswith("/decision")):
             return JSONResponse({"error":"Your account lacks permission for this action."}, status_code=403, headers={"Cache-Control":"no-store"})
         request.state.reviewer = "Reviewer " + uid
     response = await call_next(request)
@@ -142,5 +164,3 @@ async def privacy(request, call_next):
 
 
 app.add_middleware(BaseHTTPMiddleware, dispatch=privacy)
-
-

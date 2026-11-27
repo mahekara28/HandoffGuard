@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from storage import Store
+from storage import Store, StaleRevision
 from cloud_services import archive_evidence, GoogleAuthError, GoogleAPIError
 
 DEFAULT = "Reuse the same payment key for every retry of one logical payment."
@@ -67,7 +67,7 @@ def analyze(source, handoff):
             "contents": [{"parts": [{"text": json.dumps({"source": source, "handoff": handoff})}]}],
             "generationConfig": {"responseMimeType": "application/json"}}
     headers = {"Content-Type": "application/json"}
-    project = os.getenv("VERTEX_PROJECT")
+    project = None if os.getenv("GEMINI_API_KEY") else os.getenv("VERTEX_PROJECT")
     if project:
         import google.auth
         from google.auth.exceptions import GoogleAuthError
@@ -120,31 +120,41 @@ def field(payload, name, limit):
     return value
 
 
-def submit(payload):
+def submit(payload, *, test_store=None):
     source = field(payload, "source", 14000)
     handoff = field(payload, "handoff", 14000)
     reference = field({"reference": payload.get("reference", "Local review")}, "reference", 100)
-    key = hashlib.sha256(json.dumps([reference, source, handoff]).encode()).hexdigest()
+    receiver = field(payload, "receiver_uid", 128) if "receiver_uid" in payload else None
+    parent = payload.get("revises")
+    if parent is not None and (not isinstance(parent, str) or not re.fullmatch(r"[a-f0-9]{64}", parent)):
+        raise Problem(422, "Invalid parent revision.")
+    provider = "Gemini API" if os.getenv("GEMINI_API_KEY") else "Vertex AI" if os.getenv("VERTEX_PROJECT") else "Gemini API"
+    identity = [reference, source, handoff, receiver, parent, provider, os.getenv("GEMINI_MODEL")]
+    key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+    task_id = hashlib.sha256(reference.encode()).hexdigest() if "reference" in payload else key
     blocked = any(SECRET.search(v) for v in (source, handoff, reference))
     suspect = OVERRIDE.search(source) or OVERRIDE.search(handoff)
-    store = Store()
+    store = test_store or Store()
     now = time.time()
     owner = uuid.uuid4().hex
 
     def claim(old):
         if old and old["state"] != "failed" and not (old["state"] == "checking" and now-old["updated"] > 120):
             return None
-        return {"id": key, "reference": "Restricted packet" if blocked else reference,
+        return {"id": key, "receiver_uid": receiver, "reference": "Restricted packet" if blocked else reference,
                 "source": "" if blocked else source, "handoff": "" if blocked else handoff,
                 "created": old["created"] if old else now, "updated": now, "owner": owner,
                 "state": "checking", "finding": None, "decision_by": None,
                 "events": ((old or {}).get("events", []) + [{"at": now, "label": "Review started"}])[-24:]}
 
-    record = store.change(key, claim)
+    try:
+        record = store.claim(task_id, key, parent, claim)
+    except StaleRevision as exc:
+        raise Problem(409, str(exc)) from exc
     if record["owner"] != owner:
         return record
     state = "pending"
-    engine = "Local policy"
+    engine = "Offline test" if test_store else "Local policy"
     actor = None
     try:
         if blocked:
@@ -154,21 +164,23 @@ def submit(payload):
             finding = {"status": "suspicious", "reason": "An excerpt asks its reader to override prior instructions.",
                        "source_quote": source if OVERRIDE.search(source) else "", "handoff_quote": handoff if OVERRIDE.search(handoff) else ""}
             state, actor = "blocked", "Policy"
-        elif not gemini_configured() and (literal := local_conflict(source, handoff)):
+        elif test_store and (literal := local_conflict(source, handoff)):
             finding = literal
-        elif source == handoff and "\n" not in source:
+        elif test_store and source == handoff and "\n" not in source:
             finding = {"status": "aligned", "reason": "Both excerpts contain exactly the same text.",
                        "source_quote": source, "handoff_quote": handoff}
         else:
-            engine = os.getenv("GEMINI_MODEL") or "Gemini"
+            engine = provider + " · " + (os.getenv("GEMINI_MODEL") or "unconfigured")
+            if test_store:
+                raise Problem(503, "Offline check requires a local policy fixture.")
             finding = analyze(source, handoff)
-        bucket = os.getenv("HANDOFF_EVIDENCE_BUCKET")
+        bucket = None if test_store else os.getenv("HANDOFF_EVIDENCE_BUCKET")
         if bucket and finding["status"] not in ("suspicious", "sensitive"):
             try:
                 archive_evidence(bucket, key, source, handoff)
             except (GoogleAPIError, GoogleAuthError, OSError, ValueError) as exc:
                 raise Problem(503, "Evidence archive failed. Check the bucket and runtime permissions, then retry.") from exc
-        if finding["status"] == "aligned" and os.getenv("HANDOFF_AUTO_RELEASE") == "1":
+        if not test_store and finding["status"] == "aligned" and os.getenv("HANDOFF_AUTO_RELEASE") == "1":
             state, actor = "approved", "Alignment policy"
     except Problem as exc:
         finding, state = {"status": "unavailable", "reason": str(exc)}, "failed"
@@ -177,7 +189,7 @@ def submit(payload):
         state, actor = "blocked", "Policy"
 
     def finish(old):
-        if old["owner"] == owner:
+        if old["state"] == "checking" and old["owner"] == owner:
             stamp = time.time()
             return dict(old, state=state, finding=finding, engine=engine, updated=stamp, decision_by=actor,
                         events=old["events"] + [{"at": stamp, "label": engine + " · " + finding["status"]},
@@ -185,13 +197,27 @@ def submit(payload):
     return store.change(key, finish)
 
 
-def decide(key, action, actor="Reviewer"):
+def needs_fresh_review(record):
+    return not record.get("revision") or (record.get("engine") == "Local policy" and record["state"] in ("approved", "pending"))
+
+
+def released(record):
+    if needs_fresh_review(record):
+        raise Problem(409, "Archived review. Resubmit the handoff to create a current revision.")
+    if record["state"] != "approved":
+        raise Problem(409, "Release held: " + record["state"])
+    return {"id": record["id"], "revision": record["revision"], "handoff": record["handoff"]}
+
+
+def decide(key, action, actor="Reviewer", *, store=None):
     if action not in ("approved", "rejected", "clarification"):
         raise Problem(422, "Choose approve, reject or request clarification.")
 
     def update(old):
         if not old:
             raise Problem(404, "Packet not found.")
+        if needs_fresh_review(old):
+            raise Problem(409, "Archived review. Resubmit before deciding.")
         if old["state"] == action:
             return None
         if old["state"] != "pending":
@@ -199,9 +225,4 @@ def decide(key, action, actor="Reviewer"):
         stamp = time.time()
         return dict(old, state=action, updated=stamp, decision_by=actor,
                     events=old.get("events", []) + [{"at": stamp, "label": actor + " · " + action}])
-    return Store().change(key, update)
-
-
-
-
-
+    return (store or Store()).change(key, update)
