@@ -12,11 +12,15 @@ py -m venv .venv
 .\.venv\Scripts\python.exe app.py --gemini
 ~~~
 
-The launcher prompts for your API key (hidden) and the model ID enabled in AI Studio. It keeps them in the server process. Open [the review desk](http://localhost:8502). Paste the source and outgoing instruction, or open **Examples and file uploads** for a sample or a UTF-8 text file. Each input accepts up to 14,000 characters.
+The launcher prompts for your API key (hidden) and the model ID enabled in AI Studio. It keeps them in the server process. Open [the review desk](http://localhost:8502). Paste the source and outgoing instruction, or choose **Load example** for a sample, or use **Upload** beside either input for a UTF-8 text file. Each input accepts up to 14,000 characters.
+
+## Run the demo
+
+Open **Tools → Run Gemini demo** for a hands-free walkthrough. The desk sends a changed instruction to Gemini, rejects it if Gemini identifies the contradiction, then submits a prepared correction and releases it only if Gemini finds it aligned. The report shows the actual verdicts and quotes. The demo uses up to two API calls and a temporary review history.
 
 ## Try the release check
 
-Click **Test release flow offline**. It approves a handoff, introduces a conflicting revision, and checks that the old approval stops working. It then corrects the instruction and verifies the release. The check uses a temporary database and runs without a Gemini key.
+Open **Tools → Test release flow offline**. It approves a handoff, introduces a conflicting revision, and checks that the old approval stops working. It then corrects the instruction and verifies the release. The check uses a temporary database and runs without a Gemini key.
 
 For your own reviews, use one **task reference** per task. Select **Edit as new version** when the instruction changes. The previous version becomes superseded, even while the new one is being checked. Reviews saved before version tracking remain available as history and need a fresh review for release.
 

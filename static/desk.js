@@ -21,7 +21,7 @@ function bind(id, action) {
 function packetPath(id) { return "/api/reviews/" + id; }
 function drawQueue() {
   const visible = rows.filter(r => !$("filter").value || r.state === $("filter").value);
-  $("count").textContent = visible.length;
+
   const buttons = visible.map(r => {
     const btn = document.createElement("button"), meta = document.createElement("small");
     btn.className = "queueitem"; btn.setAttribute("aria-current", String(selected?.id === r.id));
@@ -38,7 +38,7 @@ function drawQueue() {
   $("queue").replaceChildren(...buttons);
 }
 function show(r) {
-  selected = r; $("compose").hidden = true; $("report").hidden = false;
+  selected = r; $("new").hidden = false; $("pastReviews").close(); $("compose").hidden = true; $("report").hidden = false;
   $("title").textContent = r.reference; $("state").textContent = labels[r.state];
   $("stamp").textContent = (r.revision ? "Revision " + r.revision : "Prior review") + " · " + new Date(r.updated*1000).toLocaleString() + (r.decision_by ? " · " + r.decision_by : "");
   const f = r.finding || {};
@@ -79,16 +79,16 @@ async function openPacket(id) {
   if (sequence === revision) {notice(""); show(r);}
 }
 function compose(r) {
-  ++revision; selected = null; $("report").hidden = true; $("compose").hidden = false;
+  ++revision; selected = null; $("new").hidden = true; $("report").hidden = true; $("compose").hidden = false;
   resetFiles();
   editing = r?.revision ? r : null;
   $("reference").readOnly = Boolean(editing);
   $("receiverUid").value = r?.receiver_uid || "";
   $("options").open = false;
-  $("example").value = r ? "Custom" : "Deprecated API alias";
-  $("source").value = r ? r.source : config.alias_source;
-  $("handoff").value = r ? r.handoff : config.examples["Deprecated API alias"];
-  $("reference").value = r ? r.reference : "API compatibility"; notice(""); drawQueue();
+  $("example").value = "Custom";
+  $("source").value = r ? r.source : "";
+  $("handoff").value = r ? r.handoff : "";
+  $("reference").value = r ? r.reference : ""; notice(""); drawQueue();
 }
 function resetFiles() {
   $("sourceFile").value = ""; $("handoffFile").value = "";
@@ -96,6 +96,7 @@ function resetFiles() {
 function selectExample() {
   const name = $("example").value;
   resetFiles(); notice("");
+  $("options").open = false;
   if (name === "Custom") return;
   const alias = name === "Deprecated API alias";
   $("source").value = alias ? config.alias_source : config.source;
@@ -105,7 +106,7 @@ function selectExample() {
 async function importConversation(field) {
   const input = $(field + "File"), file = input.files[0];
   if (!file) return;
-  $(field).value = ""; $("example").value = "Custom";
+
   if (file.size > 56003) throw Error("Choose a conversation of at most 14,000 characters.");
   const bytes = await file.arrayBuffer();
   if (input.files[0] !== file) return;
@@ -114,7 +115,7 @@ async function importConversation(field) {
   catch { throw Error("Save the conversation as UTF-8 text and upload again."); }
   if (!text.trim() || text.includes("\0") || text.length > 14000)
     throw Error("Choose a nonempty text conversation of at most 14,000 characters.");
-  $(field).value = text; notice("");
+  $(field).value = text; $("example").value = "Custom"; notice("");
 }
 async function refresh() {
   if (loading) return; loading = true;
@@ -125,30 +126,43 @@ async function refresh() {
   } finally { loading = false; }
 }
 function loginView(visible) {
-  $("testDesk").hidden = visible;
+  $("testDesk").hidden = visible; $("liveDemo").hidden = visible;
   if (visible) $("testResult").hidden = true;
-  $("login").hidden = !visible; $("workspace").hidden = visible; $("new").hidden = visible;
+  $("login").hidden = !visible; $("workspace").hidden = visible; $("navigation").hidden = visible;
 }
 async function start() {
   config = await api("/api/config");
   $("receiverLabel").hidden = !config.firebase;
-  bind("testDesk", async () => {
-    $("testDesk").disabled = true;
+  async function runDemo(live) {
+    $("tools").open = false;
+    $("testDesk").disabled = $("liveDemo").disabled = true;
     $("testResult").hidden = false; $("testSteps").replaceChildren();
-    $("testTitle").textContent = "Checking the release flow…";
+    $("testTitle").textContent = live ? "Gemini is reviewing the sample handoffs…" : "Checking the release flow…";
     try {
-      const result = await api("/api/self-test", {});
-      $("testTitle").textContent = result.passed ? "Release checks passed" : "Release check failed";
+      const result = await api(live ? "/api/gemini-demo" : "/api/self-test", {});
+      $("testTitle").textContent = result.passed ? (live ? "Gemini demo complete" : "Release checks passed") : "Demo stopped · inspect the finding";
       $("testSteps").replaceChildren(...result.steps.map(step => {
         const line = document.createElement("li");
         line.textContent = (step.passed ? "Pass · " : "Fail · ") + step.label;
+        if (live) {
+          const detail = document.createElement("p");
+          detail.textContent = [step.engine, step.status, step.reason].join(" · ");
+          line.append(detail);
+          for (const quote of [step.source_quote, step.handoff_quote].filter(Boolean)) {
+            const evidence = document.createElement("blockquote"); evidence.textContent = quote; line.append(evidence);
+          }
+        }
         return line;
       }));
     } catch (err) { $("testTitle").textContent = "Test unavailable"; notice(err.message); }
-    finally { $("testDesk").disabled = false; }
-  });
+    finally { $("testDesk").disabled = false; $("liveDemo").disabled = !config.live; }
+  }
+  bind("testDesk", () => runDemo(false));
+  bind("liveDemo", () => runDemo(true));
   bind("closeTest", () => { $("testResult").hidden = true; });
-  $("connection").textContent = config.live ? config.provider + " configured · " + config.model : "Gemini setup required";
+  $("submit").disabled = !config.live;
+  $("liveDemo").disabled = !config.live;
+  $("connection").textContent = config.live ? config.provider + " configured · " + config.model : "Gemini is offline here. Open the URL printed by your --gemini server.";
   $("policy").textContent = config.auto ? "Aligned packets release automatically" : "Reviewer approval required";
   for (const name of [...Object.keys(config.examples),"Custom"]) $("example").add(new Option(name,name));
   $("example").onchange = selectExample;
@@ -156,9 +170,15 @@ async function start() {
     $(field+"File").onchange = () => importConversation(field).catch(e => notice(e.message));
     $(field).oninput = () => { $("example").value = "Custom"; $(field+"File").value = ""; };
   }
+  bind("past", () => { $("tools").open = false; $("pastReviews").showModal(); });
+  bind("dismissPast", () => $("pastReviews").close());
+  document.addEventListener("click", event => {
+    for (const id of ["tools", "options"]) if (!$(id).contains(event.target)) $(id).open = false;
+  });
   $("filter").onchange = drawQueue; bind("new", () => compose()); bind("revise", () => compose(selected));
   $("compose").onsubmit = async event => {
     event.preventDefault();
+    if (!config.live) return;
     const sequence = ++revision;
     const data = {reference:$("reference").value, source:$("source").value, handoff:$("handoff").value};
     if (editing) data.revises = editing.id;
@@ -168,7 +188,7 @@ async function start() {
       const result = await api("/api/reviews", data);
       if (revision === sequence) {notice(""); show(result);} await refresh();
     } catch(e) { notice(e.message); }
-    finally {button.disabled = false; button.textContent = "Review handoff →";}
+    finally {button.disabled = false; button.textContent = "Review with Gemini";}
   };
   for (const button of document.querySelectorAll("[data-action]")) {
     button.onclick = async () => {

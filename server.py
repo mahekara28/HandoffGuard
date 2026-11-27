@@ -13,7 +13,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 
-from release_check import run_check
+from release_check import run_check, run_gemini_demo
 from review import needs_fresh_review, released, ALIAS_SOURCE, ALIAS_HANDOFF, RISK, gemini_configured, BAD, GOOD, DEFAULT, MISSING, Problem, decide, submit
 from storage import Store
 from cloud_services import firebase_user
@@ -121,12 +121,18 @@ async def self_test(request):
     await payload(request)
     return JSONResponse(await run_in_threadpool(run_check))
 
+async def gemini_demo(request):
+    await payload(request)
+    return JSONResponse(await run_in_threadpool(run_gemini_demo))
+
+
 async def problem(request, exc):
     return JSONResponse({"error": str(exc)}, status_code=exc.code)
 
 
 app = Starlette(routes=[Route("/", home), Route("/api/config", config),
                         Route("/api/self-test", self_test, methods=["POST"]),
+                        Route("/api/gemini-demo", gemini_demo, methods=["POST"]),
                         Route("/api/receiver/{key}/release", receive),
                         Route("/api/reviews", reviews, methods=["GET", "POST"]),
                         Route("/api/reviews/{key}/release", packet),

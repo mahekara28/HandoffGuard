@@ -1,5 +1,89 @@
-:root{color-scheme:light;--ink:#172c31;--muted:#546967;--line:#ccd6d0;--accent:#245c52}*{box-sizing:border-box}body{margin:0;background:#f4f5f0;color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}.shell{max-width:1340px;margin:auto;padding:0 clamp(18px,4vw,66px)}header{background:#172e33;color:white}.bar,.mast,.sectionhead,.queuehead,.foot,footer,.actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.bar{min-height:66px;justify-content:flex-start}.brand{display:flex;gap:11px;align-items:center;color:white;text-decoration:none;font-weight:650;font-size:20px;letter-spacing:-.04em}.mark{background:#c8ddc8;color:#193b34;border-radius:8px;font:bold 27px/34px Georgia;width:34px;text-align:center}.product,#connection{font-size:13px;color:#d6e2dd}.product i{margin:0 9px;color:#9caeaa}#connection{margin-left:auto}.mast{padding:40px 0 26px;border-bottom:1px solid var(--line)}h1,h2,h3,h4,p{margin:0}h1,h3{font-family:Georgia,serif;font-weight:normal;letter-spacing:-.045em}h1{font-size:clamp(40px,5vw,65px);line-height:1.06}.mast p{margin-top:9px;color:var(--muted)}h2{font-size:21px;letter-spacing:-.035em}.workspace{display:grid;grid-template-columns:minmax(210px, .8fr) minmax(0,2.5fr);gap:clamp(18px,2.7vw,42px);padding-top:26px}aside select{margin:15px 0}.paper{background:#fffefa;border:1px solid var(--line);border-radius:12px;padding:clamp(18px,3vw,38px);min-width:0}button,input,textarea,select{font:inherit;color:inherit}button{background:#fffefa;border:1px solid #adbfba;border-radius:7px;padding:9px 15px;font-weight:600;cursor:pointer}button:hover{border-color:var(--accent);background:#edf2ed}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.55;cursor:wait}input,select,textarea{display:block;width:100%;background:#fafbf7;border:1px solid #b8c5bf;border-radius:6px;padding:10px 12px}label,h4{display:block;font-weight:600;font-size:14px;margin:18px 0 6px}textarea{min-height:145px;resize:vertical;line-height:1.55}.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}.pair>div{min-width:0}.foot,.finding,.actions{margin-top:22px}.foot{border-top:1px solid var(--line);padding-top:18px}.foot small{max-width:280px}small,.meta,footer{color:var(--muted);font-size:13px}.tag{border-radius:4px;padding:3px 9px;font-size:12px;background:#e4ede6;color:#284a40}.queueitem{width:100%;border:0;border-radius:0;background:transparent;border-bottom:1px solid var(--line);text-align:left;display:block;padding:13px 9px}.queueitem[aria-current=true]{background:#e2ebe5;border-left:3px solid var(--accent)}.queueitem small{display:block;font-weight:400}.empty{color:var(--muted);font-size:14px}.finding{background:#eef3ee;border-left:3px solid var(--accent);padding:18px 20px}.finding[data-tone=hold]{background:#f6f0e6;border-color:#977242}h3{font-size:32px}blockquote,pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;font:inherit}blockquote{font:18px/1.55 Georgia,serif}details{border-block:1px solid var(--line);padding:12px 0;margin-top:20px}summary{cursor:pointer}.actions{justify-content:flex-start}.meta{margin-top:5px}#notice{position:sticky;bottom:10px;background:#253e40;color:white;padding:10px 14px;border-radius:6px;margin:14px 0}#notice:empty{display:none}footer{margin:32px 0;padding-top:14px;border-top:1px solid var(--line)}.sr{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}[hidden]{display:none!important}:focus-visible{outline:3px solid #437dad;outline-offset:3px}#queue{max-height:56vh;overflow:auto}#title,.queueitem{overflow-wrap:anywhere}@media(max-width:760px){.workspace,.pair{grid-template-columns:1fr}.mast{padding:24px 0}.product{display:none}#queue{max-height:155px}.bar{gap:6px}#connection{font-size:11px}.foot .primary{width:100%}}
-
-.riskband{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px;padding:18px 0;border-block:1px solid var(--line)}.riskband strong,.riskband small{display:block}.riskband strong{font-size:20px}.pair input[type=file]{font-size:13px;padding:8px}.pair textarea{margin-top:8px}.pair small{font-size:12px}#checks details p{margin:.5rem 0}#checks details blockquote{font-size:16px}
-#login{max-width:420px;padding:24px 0}#login button{margin-top:16px}
-.toolbar{display:flex;gap:10px;flex-wrap:wrap}.testresult{margin-top:20px;background:#eaf0ea;border:1px solid var(--line);border-radius:9px;padding:18px 22px}.testresult button{float:right}.testresult ol{padding-left:22px;margin-bottom:0}.testresult li{margin:3px 0}#options{margin-top:12px;border:0;padding:0;color:var(--muted)}#options[open]{border-bottom:1px solid var(--line);padding-bottom:14px}#options summary{font-size:14px}input[readonly]{color:var(--muted)}
+:root {
+  color-scheme: light;
+  --ink: #232f33;
+  --dim: #56676b;
+  --rule: #d5dcda;
+  --green: #245b4c;
+  font: 16px/1.55 "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: #f8f9f6;
+}
+* { box-sizing: border-box }
+body { margin: 0 }
+.shell { width: min(1024px, calc(100% - 64px)); margin-inline: auto }
+header { border-bottom: 1px solid var(--rule); background: #fff }
+.bar,.brand,nav,.sectionhead,.taskline,.editorhead,.foot,.actions { display:flex; align-items:center; gap:12px }
+.bar,.sectionhead,.editorhead,.foot { justify-content:space-between }
+.bar { height:62px }
+.brand { color:var(--ink); font-weight:690; font-size:19px; letter-spacing:-.045em; text-decoration:none }
+.mark { position:relative; width:24px; height:27px }
+.mark i { position:absolute; width:15px; height:18px; border:2px solid var(--green); border-radius:3px; background:#fff }
+.mark i:first-child { top:1px; left:0 }
+.mark i:last-child { bottom:1px; right:0; background:#cee1d8 }
+button,input,textarea,select,summary { font:inherit; color:inherit }
+button,summary,.upload { cursor:pointer }
+button,select { border:1px solid var(--rule); border-radius:5px; background:white; padding:8px 13px; font-weight:550; font-size:14px }
+button:hover,summary:hover,.upload:hover { color:var(--green); background:#eef3ef }
+button:disabled { opacity:.55; cursor:wait }
+.primary { background:var(--green); color:white; border-color:var(--green); padding:11px 22px }
+.primary:hover { background:#174638; color:white }
+nav button,nav summary,#options summary,#new { font-size:14px; padding:7px 10px; color:var(--dim); border:0; background:transparent }
+#tools,#options { position:relative }
+.menu,#options[open] select,#options[open] label { background:white }
+.menu { position:absolute; top:100%; right:0; z-index:3; width:224px; padding:6px; border:1px solid var(--rule); border-radius:6px; box-shadow:0 8px 22px #223c3012 }
+.menu button,.menu small { display:block; text-align:left; width:100%; padding:9px }
+main { padding-block:clamp(38px,7vh,84px) 36px }
+h1,h2,h3,h4,p { margin:0 }
+h1,#title { font:620 clamp(28px,3.2vw,42px)/1.14 "Segoe UI",sans-serif; letter-spacing:-.055em }
+h2 { font-size:22px; letter-spacing:-.035em }
+#options label { display:none }
+#options select { position:absolute; right:0; top:100%; width:205px; z-index:2 }
+.taskline { margin:24px 0 20px; gap:14px }
+.taskline label,small,.meta { color:var(--dim); font-size:13px }
+input:not([type=file]),textarea,select { min-width:0; background:#fff; border:1px solid var(--rule); border-radius:5px; padding:9px 11px }
+.taskline input { width:min(310px,80%); font-size:15px }
+.pair,.riskband { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px }
+.editors { gap:0; border:1px solid #c9d3cf; border-top:3px solid #657e76; border-radius:5px; background:white }
+.editors>div { padding:18px 20px 12px; min-width:0 }
+.editors>div+div { border-left:1px solid var(--rule) }
+.editorhead { margin-bottom:12px; font-size:15px; font-weight:620 }
+.upload { font-size:13px; font-weight:450; color:var(--dim); text-decoration:underline; text-underline-offset:3px }
+.editors textarea { display:block; width:100%; min-height:165px; border:0; border-radius:2px; padding:5px 1px; resize:vertical; line-height:1.6 }
+::placeholder { color:#72807f }
+.foot { margin-top:18px }
+#new { padding-left:0; margin-bottom:16px }
+.meta { margin-top:8px }
+.tag { font-size:13px; background:#e4ece7; border-radius:4px; padding:3px 8px }
+.riskband { margin:24px 0 16px; padding-block:12px; border-block:1px solid var(--rule) }
+.riskband strong,.riskband small { display:block }
+.finding { background:#e9f0ea; border-left:3px solid var(--green); padding:15px 18px; margin-bottom:20px }
+.finding[data-tone=hold] { background:#f6f0e7; border-color:#947442 }
+h3 { font-size:23px; letter-spacing:-.035em }
+h4 { font-size:14px }
+blockquote,pre { margin:5px 0; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit }
+#report details { padding:12px 0; border-bottom:1px solid var(--rule) }
+.actions { flex-wrap:wrap; margin:16px 0 }
+#report input,#login input { display:block; width:100% }
+dialog { width:min(500px,94vw); color:var(--ink); border:1px solid var(--rule); border-radius:8px; padding:22px; max-height:80vh }
+dialog::backdrop { background:#1729224d }
+dialog select { margin:15px 0; width:100% }
+.queueitem { display:flex; width:100%; justify-content:space-between; gap:12px; padding:13px 4px; border:0; border-bottom:1px solid var(--rule); border-radius:0; text-align:left; overflow-wrap:anywhere }
+.queueitem small { flex-shrink:0 }
+.testresult,#login { background:white; border:1px solid var(--rule); padding:20px; margin-bottom:26px; border-radius:6px }
+#closeTest { float:right }
+#login { max-width:420px }
+#login button { margin-top:12px }
+#notice:not(:empty) { position:sticky; bottom:12px; padding:10px 15px; margin:14px 0; border-radius:5px; background:#263835; color:#fff }
+.sr,.filepick { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden }
+:focus-visible,.filepick:focus-visible+.upload { outline:2px solid #367481; outline-offset:3px }
+[hidden] { display:none!important }
+@media(max-width:640px) {
+  .shell { width:calc(100% - 32px) }
+  main { padding-top:30px }
+  .pair { grid-template-columns:1fr }
+  .editors>div+div { border-left:0; border-top:1px solid var(--rule) }
+  .editors textarea { min-height:100px }
+  .foot { align-items:flex-start; flex-direction:column-reverse }
+  .foot button { width:100% }
+  nav { gap:0 }
+}

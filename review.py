@@ -120,7 +120,7 @@ def field(payload, name, limit):
     return value
 
 
-def submit(payload, *, test_store=None):
+def submit(payload, *, test_store=None, offline=False):
     source = field(payload, "source", 14000)
     handoff = field(payload, "handoff", 14000)
     reference = field({"reference": payload.get("reference", "Local review")}, "reference", 100)
@@ -154,7 +154,7 @@ def submit(payload, *, test_store=None):
     if record["owner"] != owner:
         return record
     state = "pending"
-    engine = "Offline test" if test_store else "Local policy"
+    engine = "Offline test" if offline else "Local policy"
     actor = None
     try:
         if blocked:
@@ -164,14 +164,14 @@ def submit(payload, *, test_store=None):
             finding = {"status": "suspicious", "reason": "An excerpt asks its reader to override prior instructions.",
                        "source_quote": source if OVERRIDE.search(source) else "", "handoff_quote": handoff if OVERRIDE.search(handoff) else ""}
             state, actor = "blocked", "Policy"
-        elif test_store and (literal := local_conflict(source, handoff)):
+        elif offline and (literal := local_conflict(source, handoff)):
             finding = literal
-        elif test_store and source == handoff and "\n" not in source:
+        elif offline and source == handoff and "\n" not in source:
             finding = {"status": "aligned", "reason": "Both excerpts contain exactly the same text.",
                        "source_quote": source, "handoff_quote": handoff}
         else:
             engine = provider + " · " + (os.getenv("GEMINI_MODEL") or "unconfigured")
-            if test_store:
+            if offline:
                 raise Problem(503, "Offline check requires a local policy fixture.")
             finding = analyze(source, handoff)
         bucket = None if test_store else os.getenv("HANDOFF_EVIDENCE_BUCKET")

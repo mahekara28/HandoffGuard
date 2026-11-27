@@ -74,6 +74,29 @@ class Workflow(unittest.TestCase):
     def submit(self, instruction, ref=None):
         return self.call("/api/reviews", {"reference": ref or self.id(), "source": DEFAULT, "handoff": instruction})
 
+    def test_live_demo_runs_both_reviews_without_changing_queue(self):
+        before = self.call("/api/reviews")[1]
+        def answer(source, handoff):
+            status = "conflict" if handoff.startswith("Remove") else "aligned"
+            return {"status":status, "reason":"Test finding", "source_quote":source, "handoff_quote":handoff}
+        with patch("review.analyze", side_effect=answer) as model:
+            code, result = self.call("/api/gemini-demo", {})
+        self.assertEqual(code, 200)
+        self.assertTrue(result["passed"])
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual([s["status"] for s in result["steps"]], ["conflict","aligned"])
+        self.assertEqual(self.call("/api/reviews")[1], before)
+
+    def test_live_demo_stops_on_unexpected_finding_or_missing_key(self):
+        finding = {"status":"unclear","reason":"Ambiguous.","source_quote":"Keep","handoff_quote":"Remove"}
+        with patch("review.analyze", return_value=finding) as model:
+            _, result = self.call("/api/gemini-demo", {})
+            self.assertFalse(result["passed"])
+            self.assertEqual(len(result["steps"]), 1)
+            model.assert_called_once()
+        with patch.dict(os.environ, {"GEMINI_API_KEY":""}):
+            self.assertEqual(self.call("/api/gemini-demo", {})[0], 503)
+
     def test_release_and_conflicting_decisions(self):
         _, item = self.submit(DEFAULT)
         path = "/api/reviews/" + item["id"]
